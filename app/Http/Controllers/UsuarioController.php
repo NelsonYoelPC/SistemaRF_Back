@@ -260,4 +260,218 @@ private function esBase64ImagenValida(string $valor): bool
 
         return $partes[1] ?? $valor;
     }
+/* =========================================================
+   OBTENER DETALLE DE UN USUARIO
+   - Devuelve datos personales
+   - Devuelve acceso al sistema
+   - Devuelve fotos
+   ========================================================= */
+public function show(int $id)
+{
+    $usuario = Usuario::with([
+        'user:id,usuario_id,role_id,name,email',
+        'fotos' => function ($query) {
+            $query->where('estado', 1)
+                  ->orderBy('orden');
+        }
+    ])->find($id);
+
+    if (!$usuario) {
+        return response()->json([
+            'message' => 'Usuario no encontrado.'
+        ], 404);
+    }
+
+    return response()->json([
+        'data' => $usuario
+    ], 200);
+}
+/* =========================================================
+   ACTUALIZAR USUARIO
+   - Actualiza datos personales
+   - Actualiza acceso al sistema
+   - Reemplaza fotos si llegan nuevas
+   ========================================================= */
+public function update(Request $request, int $id)
+{
+    $usuario = Usuario::find($id);
+
+    if (!$usuario) {
+        return response()->json([
+            'message' => 'Usuario no encontrado.'
+        ], 404);
+    }
+
+    $rules = [
+        'nombres' => ['required', 'string', 'max:100'],
+        'apellido_paterno' => ['required', 'string', 'max:100'],
+        'apellido_materno' => ['nullable', 'string', 'max:100'],
+        'tipo_documento' => ['required', 'string', 'max:20'],
+        'numero_documento' => [
+            'required',
+            'string',
+            'max:20',
+            Rule::unique('usuarios', 'numero_documento')->ignore($usuario->id)
+        ],
+        'telefono' => ['nullable', 'string', 'max:20'],
+        'direccion' => ['nullable', 'string', 'max:200'],
+        'cargo' => ['nullable', 'string', 'max:100'],
+        'estado' => ['required', 'boolean'],
+        'tiene_acceso' => ['required', 'boolean'],
+        'fotos_principales_base64' => ['nullable', 'array', 'max:4'],
+        'fotos_principales_base64.*' => ['nullable', 'string'],
+    ];
+
+    $userActual = User::where('usuario_id', $usuario->id)->first();
+
+    if ($request->boolean('tiene_acceso')) {
+        $rules['username'] = [
+            'required',
+            'string',
+            'max:50',
+            Rule::unique('users', 'name')->ignore($userActual?->id)
+        ];
+        $rules['email'] = [
+            'required',
+            'email',
+            'max:150',
+            Rule::unique('users', 'email')->ignore($userActual?->id)
+        ];
+        $rules['password'] = ['nullable', 'string', 'min:8', 'max:100'];
+        $rules['role_id'] = ['required', 'integer', 'exists:roles,id'];
+    }
+
+    $validated = $request->validate($rules);
+
+    DB::beginTransaction();
+
+    try {
+        /* =============================================
+           ACTUALIZAR USUARIO
+           ============================================= */
+        $usuario->update([
+            'nombres' => trim($validated['nombres']),
+            'apellido_paterno' => trim($validated['apellido_paterno']),
+            'apellido_materno' => !empty($validated['apellido_materno']) ? trim($validated['apellido_materno']) : null,
+            'tipo_documento' => trim($validated['tipo_documento']),
+            'numero_documento' => trim($validated['numero_documento']),
+            'telefono' => !empty($validated['telefono']) ? trim($validated['telefono']) : null,
+            'direccion' => !empty($validated['direccion']) ? trim($validated['direccion']) : null,
+            'cargo' => !empty($validated['cargo']) ? trim($validated['cargo']) : null,
+            'estado' => (int) $validated['estado'],
+        ]);
+
+        /* =============================================
+           ACTUALIZAR O CREAR USUARIO DE ACCESO
+           ============================================= */
+        if ($request->boolean('tiene_acceso')) {
+            if ($userActual) {
+                $dataUser = [
+                    'role_id' => (int) $validated['role_id'],
+                    'name' => trim($validated['username']),
+                    'email' => trim($validated['email']),
+                ];
+            
+                /* =========================================
+                   SOLO ACTUALIZAR CONTRASEÑA SI EL USUARIO
+                   ESCRIBIÓ UNA NUEVA
+                   ========================================= */
+                if (!empty($validated['password'])) {
+                    $dataUser['password'] = Hash::make($validated['password']);
+                }
+            
+                $userActual->update($dataUser);
+            } else {
+                User::create([
+                    'usuario_id' => $usuario->id,
+                    'role_id' => (int) $validated['role_id'],
+                    'name' => trim($validated['username']),
+                    'email' => trim($validated['email']),
+                    'password' => Hash::make($validated['password']),
+                ]);
+            }
+        }
+        /* =============================================
+           REEMPLAZAR FOTOS SI LLEGAN EN EL REQUEST
+           ============================================= */
+        $fotosBase64 = $validated['fotos_principales_base64'] ?? [];
+
+        Foto::where('usuario_id', $usuario->id)->delete();
+
+        foreach ($fotosBase64 as $index => $fotoBase64) {
+            if (empty($fotoBase64)) {
+                continue;
+            }
+
+            Foto::create([
+                'usuario_id' => $usuario->id,
+                'es_principal' => $index === 0 ? 1 : 0,
+                'base64' => $fotoBase64,
+                'orden' => $index + 1,
+                'estado' => 1,
+            ]);
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'message' => 'Usuario actualizado correctamente.'
+        ], 200);
+
+    } catch (\Throwable $e) {
+        DB::rollBack();
+
+        return response()->json([
+            'message' => 'No se pudo actualizar el usuario.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+/* =========================================================
+   ACTUALIZAR ESTADO DEL USUARIO
+   - Activa o desactiva el usuario en la tabla usuarios
+   - Recibe el estado desde el frontend
+   ========================================================= */
+public function updateEstado(Request $request, int $id)
+{
+    /* =====================================================
+       VALIDAR ESTADO
+       ===================================================== */
+    $validated = $request->validate([
+        'estado' => ['required', 'boolean'],
+    ]);
+
+    /* =====================================================
+       BUSCAR USUARIO
+       ===================================================== */
+    $usuario = Usuario::find($id);
+
+    if (!$usuario) {
+        return response()->json([
+            'message' => 'Usuario no encontrado.'
+        ], 404);
+    }
+
+    try {
+        /* =================================================
+           ACTUALIZAR ESTADO EN BD
+           ================================================= */
+        $usuario->estado = (int) $validated['estado'];
+        $usuario->save();
+
+        return response()->json([
+            'message' => $usuario->estado ? 'Usuario activado correctamente.' : 'Usuario desactivado correctamente.',
+            'data' => [
+                'usuario_id' => $usuario->id,
+                'estado' => (bool) $usuario->estado,
+            ]
+        ], 200);
+
+    } catch (\Throwable $e) {
+        return response()->json([
+            'message' => 'No se pudo actualizar el estado del usuario.',
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+}
 }

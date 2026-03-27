@@ -37,4 +37,13 @@ class Usuario extends Model
     {
         return $this->hasMany(Foto::class, 'usuario_id');
     }
+    /* =========================================================
+   RELACIÓN: UN USUARIO TIENE UN ACCESO (users)
+   ========================================================= */
+    public function user()
+    {
+        return $this->hasOne(User::class, 'usuario_id');
+    }
+
+
 }
