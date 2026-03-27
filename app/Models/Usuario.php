@@ -2,12 +2,22 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Foto;
 
 class Usuario extends Model
 {
+    use HasFactory;
+
+    /* =========================================================
+       TABLA ASOCIADA
+       ========================================================= */
     protected $table = 'usuarios';
 
+    /* =========================================================
+       CAMPOS ASIGNABLES
+       ========================================================= */
     protected $fillable = [
         'nombres',
         'apellido_paterno',
@@ -19,4 +29,12 @@ class Usuario extends Model
         'cargo',
         'estado'
     ];
+
+    /* =========================================================
+       RELACIÓN: UN USUARIO TIENE MUCHAS FOTOS
+       ========================================================= */
+    public function fotos()
+    {
+        return $this->hasMany(Foto::class, 'usuario_id');
+    }
 }

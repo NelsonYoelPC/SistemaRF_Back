@@ -12,6 +12,12 @@ use Illuminate\Validation\Rule;
 
 class UsuarioController extends Controller
 {
+    /* =========================================================
+       LISTAR USUARIOS
+       - Devuelve datos del usuario
+       - Devuelve datos de acceso si existen
+       - Mantiene la estructura actual del frontend
+       ========================================================= */
     public function index()
     {
         $usuarios = DB::table('usuarios as u')
@@ -41,8 +47,18 @@ class UsuarioController extends Controller
         return response()->json($usuarios, 200);
     }
 
+    /* =========================================================
+       REGISTRAR USUARIO
+       - Registra datos personales en tabla usuarios
+       - Registra acceso al sistema en tabla users
+       - Registra hasta 4 fotos en base64 en tabla fotos
+       - Todo se guarda en una transacción
+       ========================================================= */
     public function store(Request $request)
     {
+        /* =====================================================
+           REGLAS BASE DE VALIDACIÓN
+           ===================================================== */
         $rules = [
             'nombres' => ['required', 'string', 'max:100'],
             'apellido_paterno' => ['required', 'string', 'max:100'],
@@ -54,9 +70,20 @@ class UsuarioController extends Controller
             'cargo' => ['nullable', 'string', 'max:100'],
             'estado' => ['required', 'boolean'],
             'tiene_acceso' => ['required', 'boolean'],
-            'foto_principal' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+
+            /* =================================================
+               FOTOS EN BASE64
+               - El frontend enviará un arreglo de fotos
+               - Se permite hasta 4 fotos por usuario
+               ================================================= */
+            'fotos_principales_base64' => ['nullable', 'array', 'max:4'],
+            'fotos_principales_base64.*' => ['nullable', 'string'],
         ];
 
+        /* =====================================================
+           VALIDACIÓN CONDICIONAL DE ACCESO AL SISTEMA
+           - Solo si tiene_acceso = true
+           ===================================================== */
         if ($request->boolean('tiene_acceso')) {
             $rules['username'] = ['required', 'string', 'max:50', Rule::unique('users', 'name')];
             $rules['email'] = ['required', 'email', 'max:150', Rule::unique('users', 'email')];
@@ -64,24 +91,43 @@ class UsuarioController extends Controller
             $rules['role_id'] = ['required', 'integer', 'exists:roles,id'];
         }
 
+        /* =====================================================
+           EJECUTAR VALIDACIÓN
+           ===================================================== */
         $validated = $request->validate($rules);
 
         DB::beginTransaction();
 
         try {
+            /* =================================================
+               1. REGISTRAR USUARIO EN TABLA usuarios
+               ================================================= */
             $usuario = Usuario::create([
                 'nombres' => trim($validated['nombres']),
                 'apellido_paterno' => trim($validated['apellido_paterno']),
-                'apellido_materno' => $validated['apellido_materno'] ?? null,
+                'apellido_materno' => isset($validated['apellido_materno']) && $validated['apellido_materno'] !== ''
+                    ? trim($validated['apellido_materno'])
+                    : null,
                 'tipo_documento' => trim($validated['tipo_documento']),
                 'numero_documento' => trim($validated['numero_documento']),
-                'telefono' => $validated['telefono'] ?? null,
-                'direccion' => $validated['direccion'] ?? null,
-                'cargo' => $validated['cargo'] ?? null,
-                'estado' => $validated['estado'],
+                'telefono' => isset($validated['telefono']) && $validated['telefono'] !== ''
+                    ? trim($validated['telefono'])
+                    : null,
+                'direccion' => isset($validated['direccion']) && $validated['direccion'] !== ''
+                    ? trim($validated['direccion'])
+                    : null,
+                'cargo' => isset($validated['cargo']) && $validated['cargo'] !== ''
+                    ? trim($validated['cargo'])
+                    : null,
+                'estado' => (int) $validated['estado'],
             ]);
 
+            /* =================================================
+               2. REGISTRAR ACCESO AL SISTEMA EN TABLA users
+               - Solo si tiene_acceso = true
+               ================================================= */
             $user = null;
+
             if ($request->boolean('tiene_acceso')) {
                 $user = User::create([
                     'usuario_id' => $usuario->id,
@@ -92,25 +138,61 @@ class UsuarioController extends Controller
                 ]);
             }
 
-            $foto = null;
-            if ($request->hasFile('foto_principal')) {
-                $file = $request->file('foto_principal');
-                $path = $file->store('usuarios', 'public');
+            /* =================================================
+               3. REGISTRAR FOTOS EN TABLA fotos
+               - Se guarda una fila por cada foto
+               - La primera foto se marca como principal
+               - Se usa orden 1, 2, 3, 4
+               ================================================= */
+            $fotoIds = [];
+            $fotosBase64 = $validated['fotos_principales_base64'] ?? [];
 
+            foreach ($fotosBase64 as $index => $fotoBase64) {
+                /* =============================================
+                   IGNORAR VALORES VACÍOS
+                   ============================================= */
+                if (empty($fotoBase64)) {
+                    continue;
+                }
+            
+                /* =============================================
+                   VALIDAR QUE EL CONTENIDO SEA UNA IMAGEN BASE64
+                   ============================================= */
+                if (!$this->esBase64ImagenValida($fotoBase64)) {
+                    DB::rollBack();
+                
+                    return response()->json([
+                        'message' => 'Una de las fotos no tiene un formato base64 válido.'
+                    ], 422);
+                }
+            
+                /* =============================================
+                   LIMPIAR PREFIJO:
+                   data:image/jpeg;base64,
+                   data:image/png;base64,
+                   etc.
+                   ============================================= */
+                $base64Limpio = $this->obtenerContenidoBase64($fotoBase64);
+            
+                /* =============================================
+                   REGISTRAR FOTO EN TABLA fotos
+                   - es_principal = 1 solo para la primera foto
+                   - base64 = solo contenido limpio
+                   ============================================= */
                 $foto = Foto::create([
                     'usuario_id' => $usuario->id,
-                    'nombre_original' => $file->getClientOriginalName(),
-                    'nombre_archivo' => basename($path),
-                    'ruta' => 'storage/' . $path,
-                    'extension' => $file->getClientOriginalExtension(),
-                    'mime_type' => $file->getMimeType(),
-                    'tamano' => $file->getSize(),
-                    'tipo_foto' => 'PERFIL',
-                    'es_principal' => 1,
+                    'es_principal' => $index === 0 ? 1 : 0,
+                    'base64' => $base64Limpio,
+                    'orden' => $index + 1,
                     'estado' => 1,
                 ]);
+            
+                $fotoIds[] = $foto->id;
             }
 
+            /* =================================================
+               4. CONFIRMAR TRANSACCIÓN
+               ================================================= */
             DB::commit();
 
             return response()->json([
@@ -118,11 +200,14 @@ class UsuarioController extends Controller
                 'data' => [
                     'usuario_id' => $usuario->id,
                     'user_id' => $user?->id,
-                    'foto_id' => $foto?->id,
+                    'foto_ids' => $fotoIds,
                 ]
             ], 201);
 
         } catch (\Throwable $e) {
+            /* =================================================
+               REVERTIR TODO SI OCURRE UN ERROR
+               ================================================= */
             DB::rollBack();
 
             return response()->json([
@@ -130,5 +215,49 @@ class UsuarioController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+/* =========================================================
+   VALIDAR BASE64 DE IMAGEN
+   - Acepta jpeg, jpg, png y webp
+   - Valida prefijo data:image/...;base64,
+   - Valida que el contenido pueda decodificarse
+   ========================================================= */
+private function esBase64ImagenValida(string $valor): bool
+{
+    /* =====================================================
+       VALIDAR FORMATO DEL PREFIJO
+       ===================================================== */
+    if (!preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,/', $valor)) {
+        return false;
+    }
+
+    /* =====================================================
+       SEPARAR CABECERA Y CONTENIDO BASE64
+       ===================================================== */
+    $partes = explode(',', $valor, 2);
+
+    if (count($partes) !== 2) {
+        return false;
+    }
+
+    /* =====================================================
+       VALIDAR QUE EL CONTENIDO SEA BASE64 CORRECTO
+       ===================================================== */
+    return base64_decode($partes[1], true) !== false;
+}
+
+    /* =========================================================
+       OBTENER SOLO EL CONTENIDO BASE64
+       - Elimina el prefijo:
+         data:image/jpeg;base64,
+         data:image/png;base64,
+       - Devuelve solo la cadena base64 pura
+       ========================================================= */
+    private function obtenerContenidoBase64(string $valor): string
+    {
+        $partes = explode(',', $valor, 2);
+
+        return $partes[1] ?? $valor;
     }
 }
