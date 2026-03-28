@@ -5,16 +5,28 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    /**
+     * HasApiTokens:
+     * Permite generar tokens con Sanctum, por ejemplo:
+     * $user->createToken('auth_token')->plainTextToken;
+     *
+     * HasFactory:
+     * Habilita factories para pruebas o seeders.
+     *
+     * Notifiable:
+     * Permite enviar notificaciones al usuario.
+     */
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
-     * The attributes that are mass assignable.
+     * Campos asignables masivamente.
      *
      * @var list<string>
      */
@@ -27,7 +39,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * Campos que no deben exponerse en respuestas JSON.
      *
      * @var list<string>
      */
@@ -37,7 +49,10 @@ class User extends Authenticatable
     ];
 
     /**
-     * Get the attributes that should be cast.
+     * Conversión automática de tipos.
+     *
+     * password => hashed
+     * Laravel aplicará hash al asignar password si corresponde.
      *
      * @return array<string, string>
      */
@@ -47,5 +62,23 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Relación con la tabla roles.
+     * users.role_id -> roles.id
+     */
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id', 'id');
+    }
+
+    /**
+     * Relación con la tabla usuarios.
+     * users.usuario_id -> usuarios.id
+     */
+    public function usuario(): BelongsTo
+    {
+        return $this->belongsTo(Usuario::class, 'usuario_id', 'id');
     }
 }

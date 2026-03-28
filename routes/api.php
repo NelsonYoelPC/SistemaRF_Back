@@ -3,6 +3,7 @@
 use App\Http\Controllers\UsuarioController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RolController;
+use App\Http\Controllers\AuthController;
 
 Route::get('usuarios', [UsuarioController::class, 'index']);
 Route::post('usuarios', [UsuarioController::class, 'store']);
@@ -15,3 +16,11 @@ Route::get('roles/{id}', [RolController::class, 'show']);
 Route::post('roles', [RolController::class, 'store']);
 Route::put('roles/{id}', [RolController::class, 'update']);
 Route::patch('/roles/{id}/estado', [RolController::class, 'updateEstado']);
+
+Route::post('/login', [AuthController::class, 'login']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
+
