@@ -1,15 +1,27 @@
 <?php
 
+use App\Http\Controllers\PersonaInteresController;
 use App\Http\Controllers\UsuarioController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\AuthController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+*/
 
 Route::get('usuarios', [UsuarioController::class, 'index']);
 Route::post('usuarios', [UsuarioController::class, 'store']);
 Route::get('usuarios/{id}', [UsuarioController::class, 'show']);
 Route::put('usuarios/{id}', [UsuarioController::class, 'update']);
 Route::patch('/usuarios/{id}/estado', [UsuarioController::class, 'updateEstado']);
+
+// Personas de Interés (Vigilancia)
+Route::get('personas-interes', [PersonaInteresController::class, 'index']);
+Route::post('personas-interes', [PersonaInteresController::class, 'store']);
+Route::delete('personas-interes/{id}', [PersonaInteresController::class, 'destroy']);
 
 Route::get('roles', [RolController::class, 'index']);
 Route::get('roles/{id}', [RolController::class, 'show']);
@@ -23,4 +35,3 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 });
-

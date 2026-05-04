@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+websockets
+deepface
+opencv-python
+numpy
+tensorflow
+tf_keras
+flask-cors
