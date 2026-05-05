@@ -21,6 +21,7 @@ Route::patch('/usuarios/{id}/estado', [UsuarioController::class, 'updateEstado']
 // Personas de Interés (Vigilancia)
 Route::get('personas-interes', [PersonaInteresController::class, 'index']);
 Route::post('personas-interes', [PersonaInteresController::class, 'store']);
+Route::put('personas-interes/{id}', [PersonaInteresController::class, 'update']);
 Route::delete('personas-interes/{id}', [PersonaInteresController::class, 'destroy']);
 
 Route::get('roles', [RolController::class, 'index']);

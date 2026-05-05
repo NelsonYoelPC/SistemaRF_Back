@@ -37,6 +37,7 @@ class PersonaInteresController extends Controller
             'usuario_id' => 'required|exists:usuarios,id',
             'prioridad' => 'required|in:Baja,Media,Alta',
             'motivo' => 'nullable|string|max:255',
+            'motor' => 'nullable|integer|in:0,1',
         ]);
 
         // 1. Verificar si ya está activo
@@ -61,7 +62,8 @@ class PersonaInteresController extends Controller
                 'activo' => 1,
                 'prioridad' => $validated['prioridad'],
                 'motivo' => $validated['motivo'],
-                'creado_por' => $request->creado_por ?? null // Opcional por ahora
+                'motor' => $request->motor ?? 0,
+                'creado_por' => $request->creado_por ?? null
             ]);
             
             return response()->json([
@@ -76,6 +78,7 @@ class PersonaInteresController extends Controller
             'usuario_id' => $validated['usuario_id'],
             'prioridad' => $validated['prioridad'],
             'motivo' => $validated['motivo'],
+            'motor' => $request->motor ?? 0,
             'activo' => 1,
             'creado_por' => $request->creado_por ?? null
         ]);
@@ -85,6 +88,26 @@ class PersonaInteresController extends Controller
             'message' => 'Usuario añadido a la lista de vigilancia.',
             'data' => $persona
         ], 201);
+    }
+
+    /**
+     * Actualizar dinámicamente campos (motor, activo, prioridad)
+     */
+    public function update(Request $request, $id)
+    {
+        $persona = PersonaInteres::find($id);
+
+        if (!$persona) {
+            return response()->json(['status' => false, 'message' => 'Registro no encontrado'], 404);
+        }
+
+        $persona->update($request->only(['motor', 'activo', 'prioridad', 'motivo']));
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Vigilancia actualizada correctamente.',
+            'data' => $persona
+        ]);
     }
 
     /**

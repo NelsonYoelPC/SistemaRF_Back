@@ -41,46 +41,78 @@ async def search_face(file: UploadFile = File(...)):
     
     return {"message": "No se encontraron coincidencias."}, 404
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast_image(self, message: any, sender: WebSocket, is_binary: bool = False):
+        for connection in self.active_connections:
+            if connection != sender:
+                try:
+                    if is_binary:
+                        await connection.send_bytes(message)
+                    else:
+                        await connection.send_text(message)
+                except:
+                    pass
+
+manager = ConnectionManager()
+
+import time
+
 @app.websocket("/ws/recognition")
 async def websocket_recognition(websocket: WebSocket):
-    """
-    WebSocket para reconocimiento masivo y automático
-    """
-    await websocket.accept()
-    print("Cliente conectado por WebSocket")
+    await manager.connect(websocket)
+    print("Nuevo cliente conectado al sistema de retransmisión")
+    
+    last_recognition_time = 0
     
     try:
         while True:
-            # Recibir imagen en base64 desde el cliente
-            data = await websocket.receive_text()
+            # Recibir datos (pueden ser bytes o texto)
+            message = await websocket.receive()
             
-            try:
-                # Limpiar prefijo base64 si existe
-                if "," in data:
-                    data = data.split(",")[1]
+            data = None
+            is_binary = False
+            
+            if "bytes" in message:
+                data = message["bytes"]
+                is_binary = True
+            elif "text" in message:
+                data = message["text"]
+                is_binary = False
+            
+            if data:
+                # 1. Retransmitir INMEDIATAMENTE
+                await manager.broadcast_image(data, websocket, is_binary)
                 
-                img_bytes = base64.b64decode(data)
-                
-                # Procesar reconocimiento
-                result = service.find_face(img_bytes)
-                
-                if result:
-                    await websocket.send_json({
-                        "status": "success",
-                        "recognized": True,
-                        "data": result
-                    })
-                else:
-                    await websocket.send_json({
-                        "status": "success",
-                        "recognized": false,
-                        "message": "Buscando..."
-                    })
-                    
-            except Exception as e:
-                await websocket.send_json({"status": "error", "message": str(e)})
+                # 2. Reconocimiento Facial (Solo si son bytes/imagen)
+                current_time = time.time()
+                if is_binary and (current_time - last_recognition_time > 2.0):
+                    try:
+                        # Procesar en segundo plano
+                        result = service.find_face(data)
+                        last_recognition_time = current_time
+                        
+                        if result:
+                            await websocket.send_json({
+                                "status": "success",
+                                "recognized": True,
+                                "data": result
+                            })
+                    except Exception as e:
+                        print(f"Error IA: {e}")
                 
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
         print("Cliente desconectado")
 
 if __name__ == "__main__":

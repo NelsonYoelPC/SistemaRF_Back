@@ -15,6 +15,7 @@ class PersonaInteres extends Model
         'usuario_id',
         'prioridad',
         'motivo',
+        'motor',
         'activo',
         'creado_por'
     ];
