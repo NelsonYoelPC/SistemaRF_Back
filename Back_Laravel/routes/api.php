@@ -4,6 +4,7 @@ use App\Http\Controllers\PersonaInteresController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AlertaController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,6 +30,9 @@ Route::get('roles/{id}', [RolController::class, 'show']);
 Route::post('roles', [RolController::class, 'store']);
 Route::put('roles/{id}', [RolController::class, 'update']);
 Route::patch('/roles/{id}/estado', [RolController::class, 'updateEstado']);
+
+// Alertas
+Route::post('/alertas', [AlertaController::class, 'store']);
 
 Route::post('/login', [AuthController::class, 'login']);
 
